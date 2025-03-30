@@ -67,6 +67,15 @@ class PoseDetector:
         forward_shift = abs(hip_mid_x - ankle_mid_x) * 100
         return forward_shift
 
+    def calculate_foot_width(self, landmarks):
+        """Calculate approximate distance between feet in cm."""
+        left_ankle = landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE]
+        right_ankle = landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE]
+        
+        # Convert to approximate cm (assuming average shoulder width as reference)
+        width = abs(left_ankle.x - right_ankle.x) * 100
+        return width
+
     def detect_pose(self, frame):
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.pose.process(image)
@@ -77,6 +86,10 @@ class PoseDetector:
             'squat_count': self.squat_count,
             'frame': frame
         }
+        
+        if self.squat_count >= 10:  # Check if we've reached 10 reps
+            self.recording = False
+            return metrics
         
         if results.pose_landmarks:
             landmarks = results.pose_landmarks.landmark
@@ -113,17 +126,21 @@ class PoseDetector:
                 y_current = int(hip_height)
                 cv2.line(frame, (0, y_current), (w, y_current), (255, 0, 0), 1)
                 
+                # Calculate foot width
+                foot_width = self.calculate_foot_width(landmarks)
+                
                 if not self.in_squat and knee_angle < 140:
                     self.in_squat = True
                     self.current_squat = {
                         'lowest_angle': knee_angle,
                         'max_depth': depth_percentage,
-                        'back_angle': 0,
+                        'foot_width': foot_width,
                         'form_issues': []
                     }
                 elif self.in_squat:
                     self.current_squat['lowest_angle'] = min(self.current_squat['lowest_angle'], knee_angle)
                     self.current_squat['max_depth'] = max(self.current_squat['max_depth'], depth_percentage)
+                    self.current_squat['foot_width'] = foot_width
                     
                     if knee_angle > 160:  # Completed rep
                         self.in_squat = False
@@ -135,20 +152,31 @@ class PoseDetector:
             self.mp_draw.draw_landmarks(
                 frame, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
             
+            # Draw visual guides including foot width
+            self.draw_guides(frame, landmarks)
+            
         metrics['frame'] = frame
         return metrics
 
-    def draw_guides(self, frame, current_hip_height):
+    def draw_guides(self, frame, landmarks):
         if self.initial_hip_height:
             h, w, _ = frame.shape
             
             # Draw standing position line
             y_stand = int(self.initial_hip_height)
-            cv2.line(frame, (0, y_stand), (w, y_stand), (0, 255, 0), 1)
+            cv2.line(frame, (0, y_stand), (w, y_stand), (0, 255, 0), 2)
             
             # Draw target depth line
             y_target = int(self.initial_hip_height + (self.initial_hip_height * 0.4))
-            cv2.line(frame, (0, y_target), (w, y_target), (0, 0, 255), 1)
+            cv2.line(frame, (0, y_target), (w, y_target), (0, 0, 255), 2)
+            
+            # Draw foot width guide
+            left_ankle = landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE]
+            right_ankle = landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE]
+            cv2.line(frame, 
+                     (int(left_ankle.x * w), int(left_ankle.y * h)),
+                     (int(right_ankle.x * w), int(right_ankle.y * h)),
+                     (255, 0, 0), 2)  # Blue line for foot width
 
     def draw_measurement_guides(self, frame, landmarks):
         h, w, _ = frame.shape

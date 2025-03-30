@@ -246,7 +246,7 @@ class GUI:
         title_rect = title.get_rect(center=(self.width//2, 50))
         self.screen.blit(title, title_rect)
         
-        # Draw main stats box
+        # Draw main stats box (reduced height to make room for button)
         stats_box = pygame.Rect(40, 100, self.width - 80, 550)
         pygame.draw.rect(self.screen, self.WHITE, stats_box, border_radius=15)
         pygame.draw.rect(self.screen, self.GRAY, stats_box, 3, border_radius=15)
@@ -260,88 +260,81 @@ class GUI:
         self.screen.blit(section_title, (stats_x, y_pos))
         y_pos += 50
         
-        # Calculate average depth
-        avg_depth = self.summary_data['avg_depth']
-        total_reps = self.summary_data['total_reps']
+        # Two-column layout for overall stats
+        col1_x = stats_x + 20
+        col2_x = stats_x + 500
         
-        # Overall grade based on average depth
-        if avg_depth >= 90:
-            grade = "PERFECT!"
-            grade_color = self.GREEN
-        elif avg_depth >= 75:
-            grade = "GOOD"
-            grade_color = (50, 205, 50)  # Lighter green
-        elif avg_depth >= 60:
-            grade = "NOT BAD"
-            grade_color = self.BLUE
-        else:
-            grade = "NEEDS IMPROVEMENT"
-            grade_color = self.RED
+        # Cap the number of reps at 10
+        total_reps = min(len(self.summary_data['reps']), 10)
+        
+        overall_stats = [
+            (f"Total Reps: {total_reps}", self.BLACK),
+            (f"Average Depth: {self.summary_data['avg_depth']:.1f}%", 
+             self.GREEN if self.summary_data['avg_depth'] >= 60 else self.RED),
+            (f"Best Depth: {self.summary_data['best_depth']:.1f}%", self.GREEN),
+            (f"Worst Depth: {self.summary_data['worst_depth']:.1f}%", 
+             self.RED if self.summary_data['worst_depth'] < 50 else self.BLACK)
+        ]
+        
+        for i, (text, color) in enumerate(overall_stats[:2]):
+            stat = self.font_small.render(text, True, color)
+            self.screen.blit(stat, (col1_x, y_pos + i * 30))
             
-        # Display total reps
-        reps_text = self.font_medium.render(f"Total Squats: {total_reps}", True, self.BLACK)
-        self.screen.blit(reps_text, (stats_x + 20, y_pos))
+        for i, (text, color) in enumerate(overall_stats[2:]):
+            stat = self.font_small.render(text, True, color)
+            self.screen.blit(stat, (col2_x, y_pos + i * 30))
         
-        # Display average depth
-        y_pos += 50
-        depth_text = self.font_medium.render(f"Average Depth: {avg_depth:.1f}%", True, self.BLACK)
-        self.screen.blit(depth_text, (stats_x + 20, y_pos))
-        
-        # Display grade
-        y_pos += 80
-        grade_text = self.font_large.render(f"Overall Grade: {grade}", True, grade_color)
-        self.screen.blit(grade_text, (stats_x + 20, y_pos))
+        y_pos += 100
         
         # Individual Reps Section
-        y_pos += 80
         section_title = self.font_medium.render("Individual Rep Details", True, self.BLUE)
         self.screen.blit(section_title, (stats_x, y_pos))
         y_pos += 40
         
-        # Headers
+        # Headers with fixed spacing
         header_x = stats_x + 20
-        headers = ["Rep #", "Depth", "Grade"]
         header_positions = [
-            (header_x, headers[0]),
-            (header_x + 120, headers[1]),
-            (header_x + 270, headers[2])
+            (header_x, "Rep #"),
+            (header_x + 100, "Depth"),
+            (header_x + 220, "Knee Angle"),
+            (header_x + 380, "Foot Width"),
+            (header_x + 520, "Quality")
         ]
         
+        # Draw headers
         for x_pos, header in header_positions:
             header_text = self.font_small.render(header, True, self.BLUE)
             self.screen.blit(header_text, (x_pos, y_pos))
         
         y_pos += 30
         
-        # Draw individual rep data
-        for i, rep in enumerate(self.summary_data['reps']):
+        # Draw individual rep data (limited to 10 reps)
+        for i, rep in enumerate(self.summary_data['reps'][:10]):
             row_y = y_pos + (i * 30)
-            depth = rep['max_depth']
             
             # Rep number
             rep_num = self.font_small.render(f"#{i+1}", True, self.BLACK)
             self.screen.blit(rep_num, (header_x, row_y))
             
             # Depth
-            depth_text = self.font_small.render(f"{depth:.1f}%", True, self.BLACK)
-            self.screen.blit(depth_text, (header_x + 120, row_y))
+            depth_color = self.GREEN if rep['max_depth'] >= 60 else self.RED
+            depth = self.font_small.render(f"{rep['max_depth']:.1f}%", True, depth_color)
+            self.screen.blit(depth, (header_x + 100, row_y))
             
-            # Grade for individual rep
-            if depth >= 90:
-                rep_grade = "PERFECT!"
-                grade_color = self.GREEN
-            elif depth >= 75:
-                rep_grade = "GOOD"
-                grade_color = (50, 205, 50)
-            elif depth >= 60:
-                rep_grade = "NOT BAD"
-                grade_color = self.BLUE
-            else:
-                rep_grade = "NEEDS IMPROVEMENT"
-                grade_color = self.RED
+            # Knee angle
+            angle = self.font_small.render(f"{rep['lowest_angle']:.1f}°", True, self.BLACK)
+            self.screen.blit(angle, (header_x + 220, row_y))
             
-            grade = self.font_small.render(rep_grade, True, grade_color)
-            self.screen.blit(grade, (header_x + 270, row_y))
+            # Foot width
+            foot_width = self.font_small.render(f"{rep['foot_width']:.1f}cm", True, self.BLACK)
+            self.screen.blit(foot_width, (header_x + 380, row_y))
+            
+            # Quality assessment (based only on depth)
+            quality = self.assess_squat_quality(rep)
+            quality_color = self.GREEN if quality in ["Excellent!", "Good"] else \
+                          self.BLUE if quality == "Okay" else self.RED
+            quality_text = self.font_small.render(quality, True, quality_color)
+            self.screen.blit(quality_text, (header_x + 520, row_y))
         
         # Draw continue button
         self.continue_button = Button(
@@ -353,6 +346,19 @@ class GUI:
             (100, 181, 246)
         )
         self.continue_button.draw(self.screen, self.font_medium)
+
+    def assess_squat_quality(self, rep):
+        """Assess the quality of a single squat rep based only on depth."""
+        depth = rep['max_depth']
+        
+        if depth >= 90:
+            return "Excellent!"
+        elif depth >= 75:
+            return "Good"
+        elif depth >= 60:
+            return "Okay"
+        else:
+            return "Too Shallow"
 
     def calculate_depth_consistency(self):
         depths = [rep['max_depth'] for rep in self.summary_data['reps']]
